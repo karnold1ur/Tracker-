@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Action Item Tracker</title>
+  <style>
+    :root {
+      --sidebar-w: 220px;
+      --accent: #4f46e5;
+      --accent-light: #eef2ff;
+      --danger: #dc2626;
+      --surface: #f9fafb;
+      --surface2: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --text-muted: #6b7280;
+      --radius: 6px;
+      --font: system-ui, -apple-system, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: var(--font);
+      font-size: 14px;
+      color: var(--text);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      height: 44px;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    header h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+    header span { font-size: 12px; opacity: .7; }
+
+    /* ── Body ── */
+    #app-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    #sidebar-top {
+      padding: 12px 10px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    #sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 6px;
+    }
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 8px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: background .1s;
+      gap: 6px;
+    }
+    .sidebar-item:hover { background: var(--surface); }
+    .sidebar-item.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+    .sidebar-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .sidebar-item .count {
+      font-size: 11px;
+      background: var(--border);
+      border-radius: 9px;
+      padding: 1px 6px;
+      color: var(--text-muted);
+    }
+    .sidebar-item.active .count { background: #c7d2fe; color: var(--accent); }
+    .sidebar-item .del-proj {
+      opacity: 0;
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--danger);
+      font-size: 14px;
+      padding: 0 2px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .sidebar-item:hover .del-proj { opacity: 1; }
+    #sidebar-bottom {
+      padding: 8px 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Main ── */
+    #main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 28px;
+    }
+
+    .project-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .project-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      border: none;
+      background: transparent;
+      padding: 2px 4px;
+      border-radius: var(--radius);
+      font-family: var(--font);
+      width: 100%;
+      outline: none;
+    }
+    .project-title:hover { background: var(--surface); }
+    .project-title:focus { background: var(--surface); box-shadow: 0 0 0 2px var(--accent); }
+
+    /* ── Notes ── */
+    .notes-section { margin-bottom: 20px; }
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .notes-area {
+      width: 100%;
+      min-height: 72px;
+      max-height: 240px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      font-family: var(--font);
+      font-size: 13px;
+      color: var(--text);
+      background: var(--surface2);
+      outline: none;
+      line-height: 1.5;
+      transition: border-color .15s;
+    }
+    .notes-area:focus { border-color: var(--accent); }
+
+    /* ── Items Section ── */
+    .items-section {}
+
+    .items-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .filter-bar select, .filter-bar input {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px 8px;
+      font-size: 12px;
+      font-family: var(--font);
+      background: var(--surface2);
+      color: var(--text);
+      outline: none;
+    }
+    .filter-bar select:focus, .filter-bar input:focus { border-color: var(--accent); }
+    .filter-clear {
+      font-size: 11px;
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+      white-space: nowrap;
+    }
+
+    /* ── Item List ── */
+    .item-list { display: flex; flex-direction: column; gap: 3px; }
+
+    .item-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color .1s, box-shadow .1s;
+    }
+    .item-row:hover { border-color: #d1d5db; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .item-row.done { opacity: .65; }
+
+    .item-check {
+      margin-top: 2px;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .item-body { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+    .item-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .item-title-text {
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: text;
+      flex: 1;
+      min-width: 80px;
+      border-radius: 3px;
+      padding: 1px 3px;
+    }
+    .item-row.done .item-title-text {
+      text-decoration: line-through;
+      color: var(--text-muted);
+    }
+    .item-title-text:hover { background: var(--surface); }
+
+    .item-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+    .chip {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .chip-owner  { background: #f3f4f6; color: #374151; }
+    .chip-project { background: #ede9fe; color: #5b21b6; }
+
+    .badge {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+      cursor: pointer;
+      border: none;
+      font-family: var(--font);
+    }
+    .badge-todo        { background: #fef3c7; color: #92400e; }
+    .badge-in-progress { background: #dbeafe; color: #1e40af; }
+    .badge-done        { background: #d1fae5; color: #065f46; }
+
+    .due-date {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .due-date.overdue { color: var(--danger); font-weight: 600; }
+
+    .item-notes-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      padding: 4px 6px;
+      background: var(--surface);
+      border-radius: 4px;
+      margin-top: 2px;
+    }
+
+    .item-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+    .icon-btn {
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 3px 5px;
+      border-radius: 4px;
+      font-size: 13px;
+      line-height: 1;
+      transition: background .1s, color .1s;
+    }
+    .icon-btn:hover { background: var(--surface); color: var(--text); }
+    .icon-btn.active { color: var(--accent); }
+    .icon-btn.danger:hover { background: #fee2e2; color: var(--danger); }
+
+    /* ── Inline Edits ── */
+    .inline-edit {
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 13.5px;
+      font-family: var(--font);
+      outline: none;
+      background: var(--surface2);
+    }
+    .inline-edit-sm {
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 11px;
+      font-family: var(--font);
+      outline: none;
+      background: var(--surface2);
+    }
+    .inline-notes {
+      width: 100%;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      font-family: var(--font);
+      outline: none;
+      resize: vertical;
+      min-height: 48px;
+      background: var(--surface2);
+    }
+
+    /* ── Add Item Form ── */
+    .add-item-form {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 10px;
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .add-item-form input, .add-item-form select {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      font-size: 13px;
+      font-family: var(--font);
+      background: var(--surface2);
+      outline: none;
+      color: var(--text);
+    }
+    .add-item-form input:focus, .add-item-form select:focus { border-color: var(--accent); }
+    #add-title { flex: 2; min-width: 140px; }
+    #add-owner { flex: 1; min-width: 90px; }
+    #add-due { min-width: 120px; }
+    #add-status { min-width: 110px; }
+
+    /* ── Buttons ── */
+    .btn {
+      border: none;
+      border-radius: var(--radius);
+      padding: 6px 12px;
+      font-size: 13px;
+      font-family: var(--font);
+      cursor: pointer;
+      font-weight: 500;
+      transition: opacity .1s;
+    }
+    .btn:hover { opacity: .88; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-sm { padding: 4px 9px; font-size: 12px; }
+
+    /* ── Empty State ── */
+    .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+    .empty p { margin: 6px 0; font-size: 13px; }
+
+    /* ── All Items badge ── */
+    .all-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      background: var(--accent-light);
+      color: var(--accent);
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>&#9654; Action Item Tracker</h1>
+    <span>Fast project follow-ups</span>
+  </header>
+  <div id="app-body">
+    <div id="sidebar"></div>
+    <div id="main"></div>
+  </div>
+
+  <script>
+  // ─── State ────────────────────────────────────────────────────────────────
+  const STORAGE_KEY = 'tracker-v1';
+
+  let state = load();
+  // UI-only: which item has notes expanded
+  const expandedNotes = new Set();
+
+  function defaultState() {
+    return {
+      activeProjectId: null,
+      filters: { status: 'all', owner: '' },
+      projects: []
+    };
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : defaultState();
+    } catch { return defaultState(); }
+  }
+
+  function persist() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  // ─── Mutators ─────────────────────────────────────────────────────────────
+  function addProject(name) {
+    const p = { id: uid(), name, notes: '', items: [], createdAt: Date.now() };
+    state.projects.push(p);
+    state.activeProjectId = p.id;
+    persist(); render();
+  }
+
+  function deleteProject(id) {
+    if (!confirm('Delete this project and all its action items?')) return;
+    state.projects = state.projects.filter(p => p.id !== id);
+    if (state.activeProjectId === id) state.activeProjectId = null;
+    persist(); render();
+  }
+
+  function renameProject(id, name) {
+    const p = state.projects.find(p => p.id === id);
+    if (p && name.trim()) { p.name = name.trim(); persist(); render(); }
+  }
+
+  function saveNotes(id, val) {
+    const p = state.projects.find(p => p.id === id);
+    if (p) { p.notes = val; persist(); }
+  }
+
+  function addItem(projectId, data) {
+    const p = state.projects.find(p => p.id === projectId);
+    if (!p) return;
+    p.items.push({
+      id: uid(), projectId,
+      title: data.title.trim(),
+      owner: data.owner.trim(),
+      dueDate: data.dueDate || '',
+      status: data.status || 'todo',
+      notes: '',
+      createdAt: Date.now()
+    });
+    persist(); render();
+  }
+
+  function updateItem(projectId, itemId, changes) {
+    const p = state.projects.find(p => p.id === projectId);
+    if (!p) return;
+    const item = p.items.find(i => i.id === itemId);
+    if (item) { Object.assign(item, changes); persist(); render(); }
+  }
+
+  function deleteItem(projectId, itemId) {
+    const p = state.projects.find(p => p.id === projectId);
+    if (p) {
+      p.items = p.items.filter(i => i.id !== itemId);
+      persist(); render();
+    }
+  }
+
+  function toggleDone(projectId, itemId) {
+    const p = state.projects.find(p => p.id === projectId);
+    if (!p) return;
+    const item = p.items.find(i => i.id === itemId);
+    if (item) {
+      item.status = item.status === 'done' ? 'todo' : 'done';
+      persist(); render();
+    }
+  }
+
+  function setActive(id) {
+    state.activeProjectId = id; // null = all items
+    state.filters = { status: 'all', owner: '' };
+    persist(); render();
+  }
+
+  function setFilter(key, val) {
+    state.filters[key] = val;
+    persist(); render();
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+  function getProject(id) { return state.projects.find(p => p.id === id); }
+
+  function allItems() {
+    return state.projects.flatMap(p => p.items);
+  }
+
+  function activeItems() {
+    if (state.activeProjectId === null) return allItems();
+    const p = getProject(state.activeProjectId);
+    return p ? p.items : [];
+  }
+
+  function filteredItems() {
+    let items = activeItems();
+    const { status, owner } = state.filters;
+    if (status !== 'all') items = items.filter(i => i.status === status);
+    if (owner) items = items.filter(i => i.owner.toLowerCase() === owner.toLowerCase());
+    return items;
+  }
+
+  function sortItems(items) {
+    const statusOrder = { todo: 0, 'in-progress': 1, done: 2 };
+    return [...items].sort((a, b) => {
+      const sd = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+      if (sd !== 0) return sd;
+      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+      return a.createdAt - b.createdAt;
+    });
+  }
+
+  function uniqueOwners() {
+    return [...new Set(activeItems().map(i => i.owner).filter(Boolean))].sort();
+  }
+
+  function isOverdue(item) {
+    if (!item.dueDate || item.status === 'done') return false;
+    return item.dueDate < new Date().toISOString().slice(0, 10);
+  }
+
+  function openCycleStatus(projectId, itemId, current) {
+    const cycle = { todo: 'in-progress', 'in-progress': 'done', done: 'todo' };
+    updateItem(projectId, itemId, { status: cycle[current] || 'todo' });
+  }
+
+  function formatDue(dateStr) {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    return `${m}/${d}/${y.slice(2)}`;
+  }
+
+  function totalOpen(project) {
+    return project.items.filter(i => i.status !== 'done').length;
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+  function render() {
+    renderSidebar();
+    renderMain();
+  }
+
+  // ── Sidebar ──
+  function renderSidebar() {
+    const sb = document.getElementById('sidebar');
+    const allCount = allItems().filter(i => i.status !== 'done').length;
+
+    let html = `<div id="sidebar-top">
+      <div class="sidebar-item${state.activeProjectId === null ? ' active' : ''}"
+           onclick="setActive(null)">
+        <span class="name">&#9776; All Items</span>
+        ${allCount ? `<span class="count">${allCount}</span>` : ''}
+      </div>
+    </div>
+    <div id="sidebar-scroll">`;
+
+    for (const p of state.projects) {
+      const open = totalOpen(p);
+      const active = state.activeProjectId === p.id;
+      html += `<div class="sidebar-item${active ? ' active' : ''}" onclick="setActive('${p.id}')">
+        <span class="name" title="${esc(p.name)}">${esc(p.name)}</span>
+        ${open ? `<span class="count">${open}</span>` : ''}
+        <button class="del-proj" title="Delete project" onclick="event.stopPropagation();deleteProject('${p.id}')">&#x2715;</button>
+      </div>`;
+    }
+
+    if (state.projects.length === 0) {
+      html += `<div style="padding:16px 10px;color:var(--text-muted);font-size:12px;text-align:center">No projects yet</div>`;
+    }
+
+    html += `</div>
+    <div id="sidebar-bottom">
+      <button class="btn btn-primary" style="width:100%" onclick="promptNewProject()">+ New Project</button>
+    </div>`;
+
+    sb.innerHTML = html;
+  }
+
+  function promptNewProject() {
+    const name = prompt('Project name:');
+    if (name && name.trim()) addProject(name.trim());
+  }
+
+  // ── Main ──
+  function renderMain() {
+    const main = document.getElementById('main');
+    if (state.activeProjectId === null) {
+      main.innerHTML = renderAllView();
+    } else {
+      const p = getProject(state.activeProjectId);
+      if (!p) { main.innerHTML = ''; return; }
+      main.innerHTML = renderProjectView(p);
+      // Restore notes textarea without losing cursor
+      const ta = main.querySelector('.notes-area');
+      if (ta) {
+        ta.value = p.notes;
+        ta.addEventListener('input', e => { saveNotes(p.id, e.target.value); });
+      }
+      // Focus add title if empty
+      const addTitle = main.querySelector('#add-title');
+      if (addTitle) {
+        addTitle.addEventListener('keydown', handleAddKey);
+      }
+    }
+    attachInlineEdits();
+    attachAddForm();
+  }
+
+  function renderAllView() {
+    const items = sortItems(filteredItems());
+    const owners = uniqueOwners();
+    const allOpen = allItems().filter(i => i.status !== 'done').length;
+
+    return `
+    <div style="margin-bottom:18px;display:flex;align-items:center;gap:10px">
+      <h2 style="margin:0;font-size:20px;font-weight:700">All Items</h2>
+      ${allOpen ? `<span class="all-badge">${allOpen} open</span>` : ''}
+    </div>
+    ${renderFilterBar(owners)}
+    <div class="item-list">${items.length ? items.map(i => renderItemRow(i, true)).join('') : renderEmpty('items')}</div>
+    `;
+  }
+
+  function renderProjectView(p) {
+    const items = sortItems(filteredItems());
+    const owners = uniqueOwners();
+
+    return `
+    <div class="project-header">
+      <input class="project-title" value="${esc(p.name)}" data-pid="${p.id}"
+        title="Click to rename" placeholder="Project name"
+        onblur="renameProject('${p.id}', this.value)"
+        onkeydown="if(event.key==='Enter')this.blur(); if(event.key==='Escape'){this.value='${esc(p.name)}';this.blur();}">
+    </div>
+
+    <div class="notes-section">
+      <div class="section-label">Meeting Notes</div>
+      <textarea class="notes-area" placeholder="Paste or type meeting notes here..."
+        data-pid="${p.id}"></textarea>
+    </div>
+
+    <div class="items-section">
+      <div class="items-header">
+        <div class="section-label" style="margin:0">Action Items</div>
+        ${renderFilterBar(owners)}
+      </div>
+      <div class="item-list">${items.length ? items.map(i => renderItemRow(i, false)).join('') : renderEmpty('items')}</div>
+      ${renderAddForm(p.id)}
+    </div>`;
+  }
+
+  function renderFilterBar(owners) {
+    const { status, owner } = state.filters;
+    const hasFilter = status !== 'all' || owner;
+    return `<div class="filter-bar">
+      <select onchange="setFilter('status', this.value)">
+        <option value="all"${status==='all'?' selected':''}>All statuses</option>
+        <option value="todo"${status==='todo'?' selected':''}>To Do</option>
+        <option value="in-progress"${status==='in-progress'?' selected':''}>In Progress</option>
+        <option value="done"${status==='done'?' selected':''}>Done</option>
+      </select>
+      <select onchange="setFilter('owner', this.value)">
+        <option value="">All owners</option>
+        ${owners.map(o => `<option value="${esc(o)}"${owner===o?' selected':''}>${esc(o)}</option>`).join('')}
+      </select>
+      ${hasFilter ? `<span class="filter-clear" onclick="setFilter('status','all');setFilter('owner','')">Clear</span>` : ''}
+    </div>`;
+  }
+
+  function renderItemRow(item, showProject) {
+    const p = getProject(item.projectId);
+    const overdue = isOverdue(item);
+    const notesOpen = expandedNotes.has(item.id);
+    const statusLabel = { todo: 'To Do', 'in-progress': 'In Progress', done: 'Done' }[item.status] || item.status;
+
+    return `<div class="item-row${item.status === 'done' ? ' done' : ''}" data-item="${item.id}" data-pid="${item.projectId}">
+      <input type="checkbox" class="item-check" ${item.status === 'done' ? 'checked' : ''}
+        onchange="toggleDone('${item.projectId}','${item.id}')">
+      <div class="item-body">
+        <div class="item-top">
+          <span class="item-title-text" data-edit="title" data-pid="${item.projectId}" data-iid="${item.id}">${esc(item.title)}</span>
+          <div class="item-meta">
+            ${showProject && p ? `<span class="chip chip-project">${esc(p.name)}</span>` : ''}
+            ${item.owner ? `<span class="chip chip-owner" data-edit="owner" data-pid="${item.projectId}" data-iid="${item.id}" title="Click to edit owner">${esc(item.owner)}</span>` : `<span style="font-size:11px;color:var(--text-muted);cursor:pointer" data-edit="owner" data-pid="${item.projectId}" data-iid="${item.id}">+ owner</span>`}
+            <button class="badge badge-${item.status}" title="Click to cycle status"
+              onclick="openCycleStatus('${item.projectId}','${item.id}','${item.status}')">${statusLabel}</button>
+            ${item.dueDate ? `<span class="due-date${overdue ? ' overdue' : ''}" data-edit="dueDate" data-pid="${item.projectId}" data-iid="${item.id}" title="Click to edit due date">
+              ${overdue ? '&#9888; ' : ''}${formatDue(item.dueDate)}
+            </span>` : `<span style="font-size:11px;color:var(--text-muted);cursor:pointer" data-edit="dueDate" data-pid="${item.projectId}" data-iid="${item.id}">+ due</span>`}
+          </div>
+        </div>
+        ${item.notes && !notesOpen ? `<div class="item-notes-text">${esc(item.notes)}</div>` : ''}
+        ${notesOpen ? `<textarea class="inline-notes" data-pid="${item.projectId}" data-iid="${item.id}"
+          placeholder="Notes..."
+          onblur="saveNoteField('${item.projectId}','${item.id}',this.value)"
+          onkeydown="if(event.key==='Escape'){expandedNotes.delete('${item.id}');render();}"
+        >${esc(item.notes)}</textarea>` : ''}
+      </div>
+      <div class="item-actions">
+        <button class="icon-btn${notesOpen ? ' active' : ''}" title="${notesOpen ? 'Close notes' : 'Edit notes'}"
+          onclick="toggleNotes('${item.id}')">&#9997;</button>
+        <button class="icon-btn danger" title="Delete item"
+          onclick="deleteItem('${item.projectId}','${item.id}')">&#x1F5D1;</button>
+      </div>
+    </div>`;
+  }
+
+  function renderAddForm(projectId) {
+    return `<div class="add-item-form">
+      <input id="add-title" placeholder="Action item title..." autocomplete="off" data-pid="${projectId}">
+      <input id="add-owner" placeholder="Owner" autocomplete="off">
+      <input id="add-due" type="date">
+      <select id="add-status">
+        <option value="todo">To Do</option>
+        <option value="in-progress">In Progress</option>
+        <option value="done">Done</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="submitAddForm('${projectId}')">Add</button>
+    </div>`;
+  }
+
+  function renderEmpty(type) {
+    if (type === 'items') return `<div class="empty"><p>No action items yet.</p><p>Use the form below to add one.</p></div>`;
+    return `<div class="empty"><p>Nothing here.</p></div>`;
+  }
+
+  // ─── Form Handlers ────────────────────────────────────────────────────────
+  function handleAddKey(e) {
+    if (e.key === 'Enter') {
+      const pid = e.target.dataset.pid;
+      submitAddForm(pid);
+    }
+    if (e.key === 'Escape') {
+      document.getElementById('add-title').value = '';
+      document.getElementById('add-owner').value = '';
+      document.getElementById('add-due').value = '';
+      document.getElementById('add-status').value = 'todo';
+    }
+  }
+
+  function attachAddForm() {
+    const t = document.getElementById('add-title');
+    if (t) t.addEventListener('keydown', handleAddKey);
+  }
+
+  function submitAddForm(projectId) {
+    const title = (document.getElementById('add-title')?.value || '').trim();
+    if (!title) { document.getElementById('add-title')?.focus(); return; }
+    addItem(projectId, {
+      title,
+      owner: document.getElementById('add-owner')?.value || '',
+      dueDate: document.getElementById('add-due')?.value || '',
+      status: document.getElementById('add-status')?.value || 'todo'
+    });
+    // render() called by addItem; focus returns
+    requestAnimationFrame(() => document.getElementById('add-title')?.focus());
+  }
+
+  // ─── Inline Editing ───────────────────────────────────────────────────────
+  function attachInlineEdits() {
+    document.querySelectorAll('[data-edit]').forEach(el => {
+      el.addEventListener('click', handleInlineEditClick);
+    });
+  }
+
+  function handleInlineEditClick(e) {
+    const el = e.currentTarget;
+    const field = el.dataset.edit;
+    const pid = el.dataset.pid;
+    const iid = el.dataset.iid;
+    const p = getProject(pid);
+    if (!p) return;
+    const item = p.items.find(i => i.id === iid);
+    if (!item) return;
+
+    if (field === 'dueDate') {
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.className = 'inline-edit-sm';
+      input.value = item.dueDate;
+      el.replaceWith(input);
+      input.focus();
+      const commit = () => { updateItem(pid, iid, { dueDate: input.value }); };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', e2 => {
+        if (e2.key === 'Enter') { commit(); }
+        if (e2.key === 'Escape') { render(); }
+      });
+      return;
+    }
+
+    const input = document.createElement('input');
+    input.className = field === 'title' ? 'inline-edit' : 'inline-edit-sm';
+    input.value = item[field] || '';
+    if (field === 'title') input.style.flex = '1';
+    el.replaceWith(input);
+    input.focus();
+    input.select();
+
+    const commit = () => {
+      const val = input.value.trim();
+      if (field === 'title' && !val) { render(); return; }
+      updateItem(pid, iid, { [field]: val });
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e2 => {
+      if (e2.key === 'Enter') { e2.preventDefault(); commit(); }
+      if (e2.key === 'Escape') { render(); }
+    });
+  }
+
+  // ─── Notes Toggle ─────────────────────────────────────────────────────────
+  function toggleNotes(itemId) {
+    if (expandedNotes.has(itemId)) expandedNotes.delete(itemId);
+    else expandedNotes.add(itemId);
+    render();
+    if (expandedNotes.has(itemId)) {
+      requestAnimationFrame(() => {
+        const ta = document.querySelector(`.inline-notes[data-iid="${itemId}"]`);
+        if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      });
+    }
+  }
+
+  function saveNoteField(pid, iid, val) {
+    updateItem(pid, iid, { notes: val });
+    expandedNotes.delete(iid);
+  }
+
+  // ─── Escape helper ────────────────────────────────────────────────────────
+  function esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // ─── Boot ─────────────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', render);
+  </script>
+</body>
+</html>
