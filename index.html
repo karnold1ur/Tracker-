@@ -154,8 +154,8 @@
     .notes-area {
       width: 100%;
       min-height: 72px;
-      max-height: 240px;
-      resize: vertical;
+      resize: none;
+      overflow: hidden;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 8px 10px;
@@ -336,10 +336,21 @@
       font-size: 12px;
       font-family: var(--font);
       outline: none;
-      resize: vertical;
+      resize: none;
+      overflow: hidden;
       min-height: 48px;
       background: var(--surface2);
     }
+
+    /* ── Owner autocomplete ── */
+    .owner-suggestion {
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .owner-suggestion:hover,
+    .owner-suggestion.active { background: var(--accent-light); color: var(--accent); }
 
     /* ── Add Item Form ── */
     .add-item-form {
@@ -426,6 +437,7 @@
   let state = load();
   // UI-only: which item has notes expanded
   const expandedNotes = new Set();
+  let ownerDropdown = null;
 
   function defaultState() {
     return {
@@ -583,6 +595,92 @@
     return project.items.filter(i => i.status !== 'done').length;
   }
 
+  function allOwners() {
+    return [...new Set(allItems().map(i => i.owner).filter(Boolean))].sort();
+  }
+
+  function autosizeTA(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  }
+
+  // ─── Owner Autocomplete ───────────────────────────────────────────────────
+  function attachOwnerAutocomplete(input) {
+    input.setAttribute('autocomplete', 'off');
+    input.addEventListener('input', () => showOwnerSuggestions(input));
+    input.addEventListener('keydown', e => {
+      if (!ownerDropdown) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveSuggestion(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggestion(-1); }
+      else if (e.key === 'Enter') {
+        const active = ownerDropdown.querySelector('.owner-suggestion.active');
+        if (active) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          input.value = active.dataset.value;
+          hideOwnerDropdown();
+        }
+      } else if (e.key === 'Escape') {
+        hideOwnerDropdown();
+      }
+    });
+    input.addEventListener('blur', () => setTimeout(hideOwnerDropdown, 150));
+  }
+
+  function showOwnerSuggestions(input) {
+    const val = input.value;
+    if (val.length < 1) { hideOwnerDropdown(); return; }
+    const matches = allOwners().filter(o => o.toLowerCase().startsWith(val.toLowerCase()));
+    if (matches.length === 0 || (matches.length === 1 && matches[0] === val)) {
+      hideOwnerDropdown(); return;
+    }
+    hideOwnerDropdown();
+    const rect = input.getBoundingClientRect();
+    const div = document.createElement('div');
+    Object.assign(div.style, {
+      position: 'fixed',
+      top: (rect.bottom + 2) + 'px',
+      left: rect.left + 'px',
+      minWidth: rect.width + 'px',
+      background: 'white',
+      border: '1px solid var(--accent)',
+      borderRadius: 'var(--radius)',
+      boxShadow: '0 4px 12px rgba(0,0,0,.12)',
+      zIndex: '9999',
+      maxHeight: '180px',
+      overflowY: 'auto',
+    });
+    matches.forEach((o, i) => {
+      const item = document.createElement('div');
+      item.className = 'owner-suggestion' + (i === 0 ? ' active' : '');
+      item.dataset.value = o;
+      item.textContent = o;
+      item.addEventListener('mousedown', e => {
+        e.preventDefault(); // keep focus on input
+        input.value = o;
+        hideOwnerDropdown();
+        input.focus();
+      });
+      div.appendChild(item);
+    });
+    document.body.appendChild(div);
+    ownerDropdown = div;
+  }
+
+  function hideOwnerDropdown() {
+    if (ownerDropdown) { ownerDropdown.remove(); ownerDropdown = null; }
+  }
+
+  function moveSuggestion(dir) {
+    if (!ownerDropdown) return;
+    const items = [...ownerDropdown.querySelectorAll('.owner-suggestion')];
+    let idx = items.findIndex(el => el.classList.contains('active'));
+    items[idx]?.classList.remove('active');
+    idx = (idx + dir + items.length) % items.length;
+    items[idx]?.classList.add('active');
+    items[idx]?.scrollIntoView({ block: 'nearest' });
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────
   function render() {
     renderSidebar();
@@ -643,7 +741,8 @@
       const ta = main.querySelector('.notes-area');
       if (ta) {
         ta.value = p.notes;
-        ta.addEventListener('input', e => { saveNotes(p.id, e.target.value); });
+        autosizeTA(ta);
+        ta.addEventListener('input', e => { saveNotes(p.id, e.target.value); autosizeTA(e.target); });
       }
       // Focus add title if empty
       const addTitle = main.querySelector('#add-title');
@@ -741,8 +840,8 @@
         ${item.notes && !notesOpen ? `<div class="item-notes-text">${esc(item.notes)}</div>` : ''}
         ${notesOpen ? `<textarea class="inline-notes" data-pid="${item.projectId}" data-iid="${item.id}"
           placeholder="Notes..."
-          onblur="saveNoteField('${item.projectId}','${item.id}',this.value)"
-          onkeydown="if(event.key==='Escape'){expandedNotes.delete('${item.id}');render();}"
+          oninput="saveItemNotes('${item.projectId}','${item.id}',this.value);autosizeTA(this)"
+          onkeydown="if(event.key==='Escape'){saveItemNotes('${item.projectId}','${item.id}',this.value);expandedNotes.delete('${item.id}');render();}"
         >${esc(item.notes)}</textarea>` : ''}
       </div>
       <div class="item-actions">
@@ -790,6 +889,8 @@
   function attachAddForm() {
     const t = document.getElementById('add-title');
     if (t) t.addEventListener('keydown', handleAddKey);
+    const o = document.getElementById('add-owner');
+    if (o) attachOwnerAutocomplete(o);
   }
 
   function submitAddForm(projectId) {
@@ -843,6 +944,10 @@
     input.value = item[field] || '';
     if (field === 'title') input.style.flex = '1';
     el.replaceWith(input);
+
+    // Attach autocomplete BEFORE commit keydown so stopImmediatePropagation works
+    if (field === 'owner') attachOwnerAutocomplete(input);
+
     input.focus();
     input.select();
 
@@ -860,20 +965,31 @@
 
   // ─── Notes Toggle ─────────────────────────────────────────────────────────
   function toggleNotes(itemId) {
-    if (expandedNotes.has(itemId)) expandedNotes.delete(itemId);
-    else expandedNotes.add(itemId);
-    render();
     if (expandedNotes.has(itemId)) {
+      // Save current textarea value before closing
+      const ta = document.querySelector(`.inline-notes[data-iid="${itemId}"]`);
+      if (ta) saveItemNotes(ta.dataset.pid, itemId, ta.value);
+      expandedNotes.delete(itemId);
+      render();
+    } else {
+      expandedNotes.add(itemId);
+      render();
       requestAnimationFrame(() => {
         const ta = document.querySelector(`.inline-notes[data-iid="${itemId}"]`);
-        if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+        if (ta) {
+          autosizeTA(ta);
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
       });
     }
   }
 
-  function saveNoteField(pid, iid, val) {
-    updateItem(pid, iid, { notes: val });
-    expandedNotes.delete(iid);
+  function saveItemNotes(pid, iid, val) {
+    const p = getProject(pid);
+    if (!p) return;
+    const item = p.items.find(i => i.id === iid);
+    if (item) { item.notes = val; persist(); }
   }
 
   // ─── Escape helper ────────────────────────────────────────────────────────
