@@ -205,6 +205,36 @@
       text-decoration: underline;
       white-space: nowrap;
     }
+    .filter-sep {
+      width: 1px;
+      height: 18px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+    .closed-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .closed-toggle input { accent-color: var(--accent); cursor: pointer; }
+    .ttl-input {
+      width: 46px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px 6px;
+      font-size: 12px;
+      font-family: var(--font);
+      background: var(--surface2);
+      color: var(--text);
+      outline: none;
+      text-align: center;
+    }
+    .ttl-input:focus { border-color: var(--accent); }
 
     /* ── Item List ── */
     .item-list { display: flex; flex-direction: column; gap: 3px; }
@@ -443,6 +473,8 @@
     return {
       activeProjectId: null,
       filters: { status: 'all', owner: '' },
+      showClosed: true,
+      closedTTL: { value: 7, unit: 'days' },
       projects: []
     };
   }
@@ -450,7 +482,12 @@
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : defaultState();
+      if (!raw) return defaultState();
+      const s = JSON.parse(raw);
+      // migrate: add new keys if missing
+      if (s.showClosed === undefined) s.showClosed = true;
+      if (!s.closedTTL) s.closedTTL = { value: 7, unit: 'days' };
+      return s;
     } catch { return defaultState(); }
   }
 
@@ -522,7 +559,8 @@
     if (!p) return;
     const item = p.items.find(i => i.id === itemId);
     if (item) {
-      item.status = item.status === 'done' ? 'todo' : 'done';
+      if (item.status === 'done') { item.status = 'todo'; item.closedAt = null; }
+      else { item.status = 'done'; item.closedAt = Date.now(); }
       persist(); render();
     }
   }
@@ -535,6 +573,16 @@
 
   function setFilter(key, val) {
     state.filters[key] = val;
+    persist(); render();
+  }
+
+  function setShowClosed(val) {
+    state.showClosed = val;
+    persist(); render();
+  }
+
+  function setClosedTTL(value, unit) {
+    state.closedTTL = { value: Number(value), unit };
     persist(); render();
   }
 
@@ -551,9 +599,25 @@
     return p ? p.items : [];
   }
 
+  function closedCutoff() {
+    if (!state.showClosed) return Infinity; // all closed hidden
+    const { value, unit } = state.closedTTL;
+    if (!value) return 0; // 0 = show all closed
+    const ms = value * (unit === 'hours' ? 3600000 : 86400000);
+    return Date.now() - ms;
+  }
+
   function filteredItems() {
     let items = activeItems();
     const { status, owner } = state.filters;
+    const cutoff = closedCutoff();
+    // hide done items outside the show window
+    items = items.filter(i => {
+      if (i.status !== 'done') return true;
+      if (!state.showClosed) return false;
+      if (state.closedTTL.value === 0) return true; // 0 = no limit
+      return (i.closedAt ?? i.createdAt) >= cutoff;
+    });
     if (status !== 'all') items = items.filter(i => i.status === status);
     if (owner) items = items.filter(i => i.owner.toLowerCase() === owner.toLowerCase());
     return items;
@@ -582,7 +646,9 @@
 
   function openCycleStatus(projectId, itemId, current) {
     const cycle = { todo: 'in-progress', 'in-progress': 'done', done: 'todo' };
-    updateItem(projectId, itemId, { status: cycle[current] || 'todo' });
+    const next = cycle[current] || 'todo';
+    const changes = { status: next, closedAt: next === 'done' ? Date.now() : null };
+    updateItem(projectId, itemId, changes);
   }
 
   function formatDue(dateStr) {
@@ -800,6 +866,7 @@
   function renderFilterBar(owners) {
     const { status, owner } = state.filters;
     const hasFilter = status !== 'all' || owner;
+    const { showClosed, closedTTL } = state;
     return `<div class="filter-bar">
       <select onchange="setFilter('status', this.value)">
         <option value="all"${status==='all'?' selected':''}>All statuses</option>
@@ -812,6 +879,18 @@
         ${owners.map(o => `<option value="${esc(o)}"${owner===o?' selected':''}>${esc(o)}</option>`).join('')}
       </select>
       ${hasFilter ? `<span class="filter-clear" onclick="setFilter('status','all');setFilter('owner','')">Clear</span>` : ''}
+      <span class="filter-sep"></span>
+      <label class="closed-toggle" title="Show or hide completed items">
+        <input type="checkbox" ${showClosed ? 'checked' : ''} onchange="setShowClosed(this.checked)">
+        Show closed
+      </label>
+      ${showClosed ? `<input class="ttl-input" type="number" min="0" value="${closedTTL.value}"
+          title="Show closed items from the last N hours or days (0 = always)"
+          onchange="setClosedTTL(this.value, document.getElementById('ttl-unit').value)">
+        <select id="ttl-unit" onchange="setClosedTTL(document.querySelector('.ttl-input').value, this.value)">
+          <option value="hours"${closedTTL.unit==='hours'?' selected':''}>hrs</option>
+          <option value="days"${closedTTL.unit==='days'?' selected':''}>days</option>
+        </select>` : ''}
     </div>`;
   }
 
