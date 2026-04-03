@@ -427,8 +427,8 @@
     .btn-sm { padding: 4px 9px; font-size: 12px; }
 
     /* ── Empty State ── */
-    .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
-    .empty p { margin: 6px 0; font-size: 13px; }
+    .empty { padding: 9px 12px; color: var(--text-muted); font-size: 12px; font-style: italic; }
+    .empty p { margin: 0; }
 
     /* ── Notes section header ── */
     .notes-section-header {
@@ -1001,6 +1001,10 @@
     }
     attachInlineEdits();
     attachAddForm();
+    // Re-size any open posted-note edit textareas (e.g. after hide/show toggle)
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.posted-note-edit').forEach(autosizeTA);
+    });
   }
 
   function renderAllView() {
@@ -1198,10 +1202,11 @@
   }
 
   function renderAddForm(projectId) {
+    const today = new Date().toISOString().slice(0, 10);
     return `<div class="add-item-form">
       <input id="add-title" placeholder="Action item title..." autocomplete="off" data-pid="${projectId}">
       <input id="add-owner" placeholder="Owner" autocomplete="off">
-      <input id="add-due" type="date">
+      <input id="add-due" type="date" value="${today}">
       <select id="add-status">
         <option value="todo">To Do</option>
         <option value="in-progress">In Progress</option>
@@ -1212,8 +1217,8 @@
   }
 
   function renderEmpty(type) {
-    if (type === 'items') return `<div class="empty"><p>No action items yet.</p><p>Use the form below to add one.</p></div>`;
-    return `<div class="empty"><p>Nothing here.</p></div>`;
+    if (type === 'items') return `<div class="empty">No action items yet — add one below</div>`;
+    return `<div class="empty">Nothing here.</div>`;
   }
 
   // ─── Form Handlers ────────────────────────────────────────────────────────
@@ -1225,7 +1230,7 @@
     if (e.key === 'Escape') {
       document.getElementById('add-title').value = '';
       document.getElementById('add-owner').value = '';
-      document.getElementById('add-due').value = '';
+      document.getElementById('add-due').value = new Date().toISOString().slice(0, 10);
       document.getElementById('add-status').value = 'todo';
     }
   }
