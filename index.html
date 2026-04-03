@@ -430,6 +430,126 @@
     .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
     .empty p { margin: 6px 0; font-size: 13px; }
 
+    /* ── Notes section header ── */
+    .notes-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    /* ── Posted Notes ── */
+    .posted-notes-section { margin-bottom: 20px; }
+
+    .posted-note {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-left: 3px solid #a5b4fc;
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .posted-note-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+    .posted-note-date {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: .02em;
+    }
+    .posted-note-actions { display: flex; gap: 2px; align-items: center; }
+    .posted-note-content {
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--text);
+      white-space: pre-wrap;
+      cursor: text;
+      border-radius: 4px;
+      padding: 3px 4px;
+      margin: 0 -4px;
+    }
+    .posted-note-content:hover { background: var(--surface); }
+    .posted-note-edit {
+      width: 100%;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 5px 7px;
+      font-size: 13px;
+      font-family: var(--font);
+      line-height: 1.55;
+      outline: none;
+      resize: none;
+      overflow: hidden;
+      background: var(--surface2);
+      color: var(--text);
+    }
+
+    /* ── Action item snapshots ── */
+    .snapshot-items {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .snapshot-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+    .snapshot-item {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 2px 0;
+      font-size: 12px;
+    }
+    .snapshot-item.snap-done-row { opacity: .55; }
+    .snap-check { flex-shrink: 0; font-size: 13px; color: var(--text-muted); }
+    .snap-title { flex: 1; }
+    .snapshot-item.snap-done-row .snap-title { text-decoration: line-through; }
+    .snap-owner {
+      font-size: 11px;
+      background: #f3f4f6;
+      color: #374151;
+      padding: 1px 6px;
+      border-radius: 9px;
+      white-space: nowrap;
+    }
+    .snap-status {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 9px;
+      white-space: nowrap;
+    }
+    .snap-todo        { background: #fef3c7; color: #92400e; }
+    .snap-in-progress { background: #dbeafe; color: #1e40af; }
+    .snap-done        { background: #d1fae5; color: #065f46; }
+
+    /* ── History toggle ── */
+    .history-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--accent);
+      background: none;
+      border: 1px solid #c7d2fe;
+      border-radius: var(--radius);
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: var(--font);
+      margin-bottom: 8px;
+      transition: background .1s;
+    }
+    .history-toggle:hover { background: var(--accent-light); }
+
     /* ── All Items badge ── */
     .all-badge {
       display: inline-flex;
@@ -465,8 +585,10 @@
   const STORAGE_KEY = 'tracker-v1';
 
   let state = load();
-  // UI-only: which item has notes expanded
+  // UI-only state
   const expandedNotes = new Set();
+  const expandedHistory = new Set(); // project IDs with full note history visible
+  let editingNoteId = null;          // ID of posted note being edited
   let ownerDropdown = null;
 
   function defaultState() {
@@ -487,6 +609,7 @@
       // migrate: add new keys if missing
       if (s.showClosed === undefined) s.showClosed = true;
       if (!s.closedTTL) s.closedTTL = { value: 7, unit: 'days' };
+      (s.projects || []).forEach(p => { if (!p.postedNotes) p.postedNotes = []; });
       return s;
     } catch { return defaultState(); }
   }
@@ -584,6 +707,63 @@
   function setClosedTTL(value, unit) {
     state.closedTTL = { value: Number(value), unit };
     persist(); render();
+  }
+
+  function postNote(projectId) {
+    const p = getProject(projectId);
+    if (!p || !p.notes.trim()) return;
+    if (!p.postedNotes) p.postedNotes = [];
+    // snapshot all current action items at post time
+    const snapshot = p.items.map(i => ({
+      id: i.id, title: i.title, owner: i.owner, status: i.status, dueDate: i.dueDate
+    }));
+    p.postedNotes.push({ id: uid(), content: p.notes.trim(), postedAt: Date.now(), snapshot });
+    p.notes = '';
+    persist(); render();
+  }
+
+  function updatePostedNote(projectId, noteId, content) {
+    const p = getProject(projectId);
+    if (!p) return;
+    const note = (p.postedNotes || []).find(n => n.id === noteId);
+    if (note) { note.content = content; persist(); }
+  }
+
+  function deletePostedNote(projectId, noteId) {
+    if (!confirm('Delete this posted note?')) return;
+    const p = getProject(projectId);
+    if (!p) return;
+    p.postedNotes = (p.postedNotes || []).filter(n => n.id !== noteId);
+    if (editingNoteId === noteId) editingNoteId = null;
+    persist(); render();
+  }
+
+  function editPostedNote(noteId) {
+    editingNoteId = noteId;
+    render();
+    requestAnimationFrame(() => {
+      const ta = document.querySelector(`.posted-note-edit[data-nid="${noteId}"]`);
+      if (ta) { autosizeTA(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    });
+  }
+
+  function closePostedNoteEdit(projectId, noteId) {
+    const ta = document.querySelector(`.posted-note-edit[data-nid="${noteId}"]`);
+    if (ta) updatePostedNote(projectId, noteId, ta.value);
+    editingNoteId = null;
+    render();
+  }
+
+  function toggleHistory(projectId) {
+    if (expandedHistory.has(projectId)) expandedHistory.delete(projectId);
+    else expandedHistory.add(projectId);
+    render();
+  }
+
+  function formatPostedAt(ts) {
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      + ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -848,10 +1028,16 @@
     </div>
 
     <div class="notes-section">
-      <div class="section-label">Meeting Notes</div>
-      <textarea class="notes-area" placeholder="Paste or type meeting notes here..."
+      <div class="notes-section-header">
+        <div class="section-label" style="margin:0">Current Meeting Notes</div>
+        <button class="btn btn-ghost btn-sm" onclick="postNote('${p.id}')"
+          title="Save these notes to project history and clear the scratchpad">Post Note &#9654;</button>
+      </div>
+      <textarea class="notes-area" placeholder="Type meeting notes here, then click Post Note to save to history..."
         data-pid="${p.id}"></textarea>
     </div>
+
+    ${renderPostedNotesSection(p)}
 
     <div class="items-section">
       <div class="items-header">
@@ -860,6 +1046,59 @@
       </div>
       <div class="item-list">${items.length ? items.map(i => renderItemRow(i, false)).join('') : renderEmpty('items')}</div>
       ${renderAddForm(p.id)}
+    </div>`;
+  }
+
+  function renderPostedNotesSection(p) {
+    const notes = (p.postedNotes || []).slice().reverse(); // newest first
+    if (notes.length === 0) return '';
+    const [latest, ...older] = notes;
+    const historyOpen = expandedHistory.has(p.id);
+    return `<div class="posted-notes-section">
+      <div class="section-label">Posted Notes</div>
+      ${renderPostedNote(p, latest, true)}
+      ${older.length > 0 ? `
+        <button class="history-toggle" onclick="toggleHistory('${p.id}')">
+          ${historyOpen
+            ? '&#9650; Collapse history'
+            : `&#9660; ${older.length} older note${older.length !== 1 ? 's' : ''}`}
+        </button>
+        ${historyOpen ? older.map(n => renderPostedNote(p, n, false)).join('') : ''}
+      ` : ''}
+    </div>`;
+  }
+
+  function renderPostedNote(p, note, isLatest) {
+    const isEditing = editingNoteId === note.id;
+    const statusLabel = { todo: 'To Do', 'in-progress': 'In Prog', done: 'Done' };
+    const hasItems = note.snapshot && note.snapshot.length > 0;
+    return `<div class="posted-note" data-nid="${note.id}">
+      <div class="posted-note-header">
+        <span class="posted-note-date">${isLatest ? '&#128203; ' : ''}${formatPostedAt(note.postedAt)}</span>
+        <span class="posted-note-actions">
+          ${isEditing
+            ? `<button class="icon-btn" style="color:var(--accent)" onclick="closePostedNoteEdit('${p.id}','${note.id}')">&#10003; Done</button>`
+            : `<button class="icon-btn" title="Edit note" onclick="editPostedNote('${note.id}')">&#9997;</button>`}
+          <button class="icon-btn danger" title="Delete note" onclick="deletePostedNote('${p.id}','${note.id}')">&#x1F5D1;</button>
+        </span>
+      </div>
+      ${isEditing
+        ? `<textarea class="posted-note-edit" data-nid="${note.id}" data-pid="${p.id}"
+             oninput="updatePostedNote('${p.id}','${note.id}',this.value);autosizeTA(this)"
+             onkeydown="if(event.key==='Escape')closePostedNoteEdit('${p.id}','${note.id}')"
+           >${esc(note.content)}</textarea>`
+        : `<div class="posted-note-content" onclick="editPostedNote('${note.id}')" title="Click to edit">${esc(note.content).replace(/\n/g, '<br>')}</div>`}
+      ${hasItems ? `
+        <div class="snapshot-items">
+          <div class="snapshot-label">Action items at posting</div>
+          ${note.snapshot.map(s => `
+            <div class="snapshot-item${s.status === 'done' ? ' snap-done-row' : ''}">
+              <span class="snap-check">${s.status === 'done' ? '&#9745;' : '&#9744;'}</span>
+              <span class="snap-title">${esc(s.title)}</span>
+              ${s.owner ? `<span class="snap-owner">${esc(s.owner)}</span>` : ''}
+              <span class="snap-status snap-${s.status}">${statusLabel[s.status] || s.status}</span>
+            </div>`).join('')}
+        </div>` : ''}
     </div>`;
   }
 
