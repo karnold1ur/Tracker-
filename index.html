@@ -588,6 +588,7 @@
   // UI-only state
   const expandedNotes = new Set();
   const expandedHistory = new Set(); // project IDs with full note history visible
+  const hiddenLatestNotes = new Set(); // project IDs where most recent note is collapsed
   let editingNoteId = null;          // ID of posted note being edited
   let ownerDropdown = null;
 
@@ -713,11 +714,7 @@
     const p = getProject(projectId);
     if (!p || !p.notes.trim()) return;
     if (!p.postedNotes) p.postedNotes = [];
-    // snapshot all current action items at post time
-    const snapshot = p.items.map(i => ({
-      id: i.id, title: i.title, owner: i.owner, status: i.status, dueDate: i.dueDate
-    }));
-    p.postedNotes.push({ id: uid(), content: p.notes.trim(), postedAt: Date.now(), snapshot });
+    p.postedNotes.push({ id: uid(), content: p.notes.trim(), postedAt: Date.now() });
     p.notes = '';
     persist(); render();
   }
@@ -757,6 +754,12 @@
   function toggleHistory(projectId) {
     if (expandedHistory.has(projectId)) expandedHistory.delete(projectId);
     else expandedHistory.add(projectId);
+    render();
+  }
+
+  function toggleLatestNote(projectId) {
+    if (hiddenLatestNotes.has(projectId)) hiddenLatestNotes.delete(projectId);
+    else hiddenLatestNotes.add(projectId);
     render();
   }
 
@@ -1050,28 +1053,51 @@
   }
 
   function renderPostedNotesSection(p) {
-    const notes = (p.postedNotes || []).slice().reverse(); // newest first
-    if (notes.length === 0) return '';
-    const [latest, ...older] = notes;
-    const historyOpen = expandedHistory.has(p.id);
+    // sorted oldest→newest for time-window calculations
+    const sorted = (p.postedNotes || []).slice().sort((a, b) => a.postedAt - b.postedAt);
+    if (sorted.length === 0) return '';
+
+    const latest = sorted[sorted.length - 1];
+    const older  = sorted.slice(0, -1).reverse(); // remaining, newest-first for display
+    const historyOpen  = expandedHistory.has(p.id);
+    const latestHidden = hiddenLatestNotes.has(p.id);
+
     return `<div class="posted-notes-section">
-      <div class="section-label">Posted Notes</div>
-      ${renderPostedNote(p, latest, true)}
+      <div class="notes-section-header" style="margin-bottom:8px">
+        <div class="section-label" style="margin:0">Posted Notes</div>
+        <button class="history-toggle" style="margin:0"
+          onclick="toggleLatestNote('${p.id}')">
+          ${latestHidden ? '&#9660; Show recent' : '&#9650; Hide recent'}
+        </button>
+      </div>
+      ${!latestHidden ? renderPostedNote(p, latest, sorted) : ''}
       ${older.length > 0 ? `
         <button class="history-toggle" onclick="toggleHistory('${p.id}')">
           ${historyOpen
             ? '&#9650; Collapse history'
             : `&#9660; ${older.length} older note${older.length !== 1 ? 's' : ''}`}
         </button>
-        ${historyOpen ? older.map(n => renderPostedNote(p, n, false)).join('') : ''}
+        ${historyOpen ? older.map(n => renderPostedNote(p, n, sorted)).join('') : ''}
       ` : ''}
     </div>`;
   }
 
-  function renderPostedNote(p, note, isLatest) {
+  // Returns items whose createdAt falls within this note's posting window.
+  // Window: (prevNote.postedAt, note.postedAt] — or (−∞, note.postedAt] for the first note.
+  function itemsForNote(p, note, sortedNotes) {
+    const idx = sortedNotes.findIndex(n => n.id === note.id);
+    const windowStart = idx > 0 ? sortedNotes[idx - 1].postedAt : 0;
+    const windowEnd   = note.postedAt;
+    return p.items
+      .filter(i => i.createdAt > windowStart && i.createdAt <= windowEnd)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  function renderPostedNote(p, note, sortedNotes) {
     const isEditing = editingNoteId === note.id;
+    const isLatest  = note.id === sortedNotes[sortedNotes.length - 1].id;
     const statusLabel = { todo: 'To Do', 'in-progress': 'In Prog', done: 'Done' };
-    const hasItems = note.snapshot && note.snapshot.length > 0;
+    const relatedItems = itemsForNote(p, note, sortedNotes);
     return `<div class="posted-note" data-nid="${note.id}">
       <div class="posted-note-header">
         <span class="posted-note-date">${isLatest ? '&#128203; ' : ''}${formatPostedAt(note.postedAt)}</span>
@@ -1088,15 +1114,15 @@
              onkeydown="if(event.key==='Escape')closePostedNoteEdit('${p.id}','${note.id}')"
            >${esc(note.content)}</textarea>`
         : `<div class="posted-note-content" onclick="editPostedNote('${note.id}')" title="Click to edit">${esc(note.content).replace(/\n/g, '<br>')}</div>`}
-      ${hasItems ? `
+      ${relatedItems.length > 0 ? `
         <div class="snapshot-items">
-          <div class="snapshot-label">Action items at posting</div>
-          ${note.snapshot.map(s => `
-            <div class="snapshot-item${s.status === 'done' ? ' snap-done-row' : ''}">
-              <span class="snap-check">${s.status === 'done' ? '&#9745;' : '&#9744;'}</span>
-              <span class="snap-title">${esc(s.title)}</span>
-              ${s.owner ? `<span class="snap-owner">${esc(s.owner)}</span>` : ''}
-              <span class="snap-status snap-${s.status}">${statusLabel[s.status] || s.status}</span>
+          <div class="snapshot-label">Action items logged in this session</div>
+          ${relatedItems.map(i => `
+            <div class="snapshot-item${i.status === 'done' ? ' snap-done-row' : ''}">
+              <span class="snap-check">${i.status === 'done' ? '&#9745;' : '&#9744;'}</span>
+              <span class="snap-title">${esc(i.title)}</span>
+              ${i.owner ? `<span class="snap-owner">${esc(i.owner)}</span>` : ''}
+              <span class="snap-status snap-${i.status}">${statusLabel[i.status] || i.status}</span>
             </div>`).join('')}
         </div>` : ''}
     </div>`;
