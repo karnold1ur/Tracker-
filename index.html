@@ -108,6 +108,57 @@
       flex-shrink: 0;
     }
     .sidebar-item:hover .del-proj { opacity: 1; }
+
+    /* ── Project color dot ── */
+    .proj-color-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #d1d5db;
+      cursor: pointer;
+      transition: transform .15s;
+      border: none;
+      padding: 0;
+    }
+    .proj-color-dot.has-color { background: var(--dot-color, #d1d5db); }
+    .proj-color-dot:hover { transform: scale(1.5); }
+
+    /* ── Drag reorder ── */
+    .sidebar-item[draggable="true"] { cursor: grab; }
+    .sidebar-item.drag-over-top    { box-shadow: 0 -2px 0 var(--accent); }
+    .sidebar-item.drag-over-bottom { box-shadow: 0 2px 0 var(--accent); }
+    .sidebar-item.dragging         { opacity: .4; }
+
+    /* ── Color picker popup ── */
+    #color-picker-popup {
+      position: fixed;
+      z-index: 9999;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 12px rgba(0,0,0,.12);
+      padding: 8px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      width: 130px;
+    }
+    .color-swatch {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform .1s, border-color .1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+    .color-swatch:hover   { transform: scale(1.2); }
+    .color-swatch.current { border-color: var(--text); }
     #sidebar-bottom {
       padding: 8px 10px;
       border-top: 1px solid var(--border);
@@ -591,6 +642,14 @@
   const hiddenLatestNotes = new Set(); // project IDs where most recent note is collapsed
   let editingNoteId = null;          // ID of posted note being edited
   let ownerDropdown = null;
+  let colorPickerEl = null;
+  let dragSrcPid    = null;
+
+  const COLOR_PALETTE = [
+    '#ef4444','#f97316','#eab308',
+    '#22c55e','#14b8a6','#3b82f6',
+    '#8b5cf6','#ec4899','#6b7280',
+  ];
 
   function defaultState() {
     return {
@@ -610,7 +669,10 @@
       // migrate: add new keys if missing
       if (s.showClosed === undefined) s.showClosed = true;
       if (!s.closedTTL) s.closedTTL = { value: 7, unit: 'days' };
-      (s.projects || []).forEach(p => { if (!p.postedNotes) p.postedNotes = []; });
+      (s.projects || []).forEach(p => {
+        if (!p.postedNotes) p.postedNotes = [];
+        if (!('color' in p)) p.color = null;
+      });
       return s;
     } catch { return defaultState(); }
   }
@@ -625,7 +687,7 @@
 
   // ─── Mutators ─────────────────────────────────────────────────────────────
   function addProject(name) {
-    const p = { id: uid(), name, notes: '', items: [], createdAt: Date.now() };
+    const p = { id: uid(), name, color: null, notes: '', items: [], createdAt: Date.now() };
     state.projects.push(p);
     state.activeProjectId = p.id;
     persist(); render();
@@ -761,6 +823,97 @@
     if (hiddenLatestNotes.has(projectId)) hiddenLatestNotes.delete(projectId);
     else hiddenLatestNotes.add(projectId);
     render();
+  }
+
+  function setProjectColor(projectId, color) {
+    const p = getProject(projectId);
+    if (p) { p.color = color; persist(); render(); }
+  }
+
+  // ─── Color Picker ─────────────────────────────────────────────────────────
+  function openColorPicker(projectId, anchorEl) {
+    closeColorPicker();
+    const p = getProject(projectId);
+    const rect = anchorEl.getBoundingClientRect();
+    const div = document.createElement('div');
+    div.id = 'color-picker-popup';
+    div.style.top  = (rect.bottom + 4) + 'px';
+    div.style.left = rect.left + 'px';
+
+    // "None" swatch
+    const none = document.createElement('div');
+    none.className = 'color-swatch' + (p.color === null ? ' current' : '');
+    none.title = 'No color';
+    none.style.background = '#e5e7eb';
+    none.style.color = '#9ca3af';
+    none.textContent = '✕';
+    none.addEventListener('click', e => { e.stopPropagation(); setProjectColor(projectId, null); closeColorPicker(); });
+    div.appendChild(none);
+
+    COLOR_PALETTE.forEach(color => {
+      const sw = document.createElement('div');
+      sw.className = 'color-swatch' + (p.color === color ? ' current' : '');
+      sw.style.background = color;
+      sw.title = color;
+      sw.addEventListener('click', e => { e.stopPropagation(); setProjectColor(projectId, color); closeColorPicker(); });
+      div.appendChild(sw);
+    });
+
+    document.body.appendChild(div);
+    colorPickerEl = div;
+    setTimeout(() => document.addEventListener('click', closeColorPicker, { once: true }), 0);
+  }
+
+  function closeColorPicker() {
+    if (colorPickerEl) { colorPickerEl.remove(); colorPickerEl = null; }
+  }
+
+  // ─── Drag to Reorder ──────────────────────────────────────────────────────
+  function onDragStart(e, pid) {
+    dragSrcPid = pid;
+    e.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => e.target.classList.add('dragging'));
+  }
+
+  function onDragOver(e, pid) {
+    e.preventDefault();
+    if (!dragSrcPid || dragSrcPid === pid) return;
+    e.dataTransfer.dropEffect = 'move';
+    // Drop-zone indicator: top half = insert above, bottom half = insert below
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mid  = rect.top + rect.height / 2;
+    e.currentTarget.classList.toggle('drag-over-top',    e.clientY < mid);
+    e.currentTarget.classList.toggle('drag-over-bottom', e.clientY >= mid);
+  }
+
+  function onDragLeave(e) {
+    e.currentTarget.classList.remove('drag-over-top', 'drag-over-bottom');
+  }
+
+  function onDrop(e, pid) {
+    e.preventDefault();
+    document.querySelectorAll('.drag-over-top,.drag-over-bottom,.dragging')
+      .forEach(el => el.classList.remove('drag-over-top','drag-over-bottom','dragging'));
+    if (!dragSrcPid || dragSrcPid === pid) { dragSrcPid = null; return; }
+
+    const rect   = e.currentTarget.getBoundingClientRect();
+    const insertBefore = e.clientY < rect.top + rect.height / 2;
+    const srcIdx = state.projects.findIndex(p => p.id === dragSrcPid);
+    let   dstIdx = state.projects.findIndex(p => p.id === pid);
+    if (srcIdx === -1 || dstIdx === -1) { dragSrcPid = null; return; }
+
+    const [moved] = state.projects.splice(srcIdx, 1);
+    dstIdx = state.projects.findIndex(p => p.id === pid);
+    state.projects.splice(insertBefore ? dstIdx : dstIdx + 1, 0, moved);
+
+    dragSrcPid = null;
+    persist(); render();
+  }
+
+  function onDragEnd(e) {
+    document.querySelectorAll('.drag-over-top,.drag-over-bottom,.dragging')
+      .forEach(el => el.classList.remove('drag-over-top','drag-over-bottom','dragging'));
+    dragSrcPid = null;
   }
 
   function formatPostedAt(ts) {
@@ -951,9 +1104,20 @@
     <div id="sidebar-scroll">`;
 
     for (const p of state.projects) {
-      const open = totalOpen(p);
+      const open   = totalOpen(p);
       const active = state.activeProjectId === p.id;
-      html += `<div class="sidebar-item${active ? ' active' : ''}" onclick="setActive('${p.id}')">
+      const dotStyle = p.color ? `--dot-color:${p.color};background:${p.color}` : '';
+      html += `<div class="sidebar-item${active ? ' active' : ''}"
+        draggable="true"
+        ondragstart="onDragStart(event,'${p.id}')"
+        ondragover="onDragOver(event,'${p.id}')"
+        ondragleave="onDragLeave(event)"
+        ondrop="onDrop(event,'${p.id}')"
+        ondragend="onDragEnd(event)"
+        onclick="setActive('${p.id}')">
+        <span class="proj-color-dot${p.color ? ' has-color' : ''}" style="${dotStyle}"
+          onclick="event.stopPropagation();openColorPicker('${p.id}',this)"
+          title="Set project color"></span>
         <span class="name" title="${esc(p.name)}">${esc(p.name)}</span>
         ${open ? `<span class="count">${open}</span>` : ''}
         <button class="del-proj" title="Delete project" onclick="event.stopPropagation();deleteProject('${p.id}')">&#x2715;</button>
@@ -1176,7 +1340,7 @@
         <div class="item-top">
           <span class="item-title-text" data-edit="title" data-pid="${item.projectId}" data-iid="${item.id}">${esc(item.title)}</span>
           <div class="item-meta">
-            ${showProject && p ? `<span class="chip chip-project">${esc(p.name)}</span>` : ''}
+            ${showProject && p ? `<span class="chip chip-project">${p.color ? `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${p.color};margin-right:4px;vertical-align:middle;flex-shrink:0"></span>` : ''}${esc(p.name)}</span>` : ''}
             ${item.owner ? `<span class="chip chip-owner" data-edit="owner" data-pid="${item.projectId}" data-iid="${item.id}" title="Click to edit owner">${esc(item.owner)}</span>` : `<span style="font-size:11px;color:var(--text-muted);cursor:pointer" data-edit="owner" data-pid="${item.projectId}" data-iid="${item.id}">+ owner</span>`}
             <button class="badge badge-${item.status}" title="Click to cycle status"
               onclick="openCycleStatus('${item.projectId}','${item.id}','${item.status}')">${statusLabel}</button>
