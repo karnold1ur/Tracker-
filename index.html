@@ -111,18 +111,17 @@
 
     /* ── Project color dot ── */
     .proj-color-dot {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       flex-shrink: 0;
-      background: #d1d5db;
+      background: #ede9fe; /* default = violet, same as chip fallback */
       cursor: pointer;
       transition: transform .15s;
       border: none;
       padding: 0;
     }
-    .proj-color-dot.has-color { background: var(--dot-color, #d1d5db); }
-    .proj-color-dot:hover { transform: scale(1.5); }
+    .proj-color-dot:hover { transform: scale(1.4); }
 
     /* ── Drag reorder ── */
     .sidebar-item[draggable="true"] { cursor: grab; }
@@ -341,7 +340,7 @@
       cursor: default;
     }
     .chip-owner  { background: #f3f4f6; color: #374151; }
-    .chip-project { background: #ede9fe; color: #5b21b6; }
+    .chip-project { background: #ede9fe; color: #5b21b6; } /* fallback; overridden by inline style */
 
     .badge {
       font-size: 11px;
@@ -645,11 +644,26 @@
   let colorPickerEl = null;
   let dragSrcPid    = null;
 
-  const COLOR_PALETTE = [
-    '#ef4444','#f97316','#eab308',
-    '#22c55e','#14b8a6','#3b82f6',
-    '#8b5cf6','#ec4899','#6b7280',
-  ];
+  // bg → text pairs; default (null) = violet
+  const CHIP_COLORS = {
+    '#fee2e2': '#991b1b',  // red
+    '#ffedd5': '#9a3412',  // orange
+    '#fef9c3': '#854d0e',  // yellow
+    '#dcfce7': '#166534',  // green
+    '#ccfbf1': '#115e59',  // teal
+    '#dbeafe': '#1e40af',  // blue
+    '#fce7f3': '#9d174d',  // pink
+    '#f1f5f9': '#334155',  // slate
+  };
+  const DEFAULT_CHIP = { bg: '#ede9fe', text: '#5b21b6' }; // violet
+  const COLOR_PALETTE = Object.keys(CHIP_COLORS);
+
+  function chipColors(project) {
+    if (project.color && CHIP_COLORS[project.color]) {
+      return { bg: project.color, text: CHIP_COLORS[project.color] };
+    }
+    return DEFAULT_CHIP;
+  }
 
   function defaultState() {
     return {
@@ -840,22 +854,22 @@
     div.style.top  = (rect.bottom + 4) + 'px';
     div.style.left = rect.left + 'px';
 
-    // "None" swatch
+    // Default (violet) swatch — acts as "reset"
     const none = document.createElement('div');
-    none.className = 'color-swatch' + (p.color === null ? ' current' : '');
-    none.title = 'No color';
-    none.style.background = '#e5e7eb';
-    none.style.color = '#9ca3af';
-    none.textContent = '✕';
+    none.className = 'color-swatch' + (!p.color ? ' current' : '');
+    none.title = 'Default';
+    none.style.background = DEFAULT_CHIP.bg;
+    none.style.border = `2px solid ${!p.color ? DEFAULT_CHIP.text : 'transparent'}`;
     none.addEventListener('click', e => { e.stopPropagation(); setProjectColor(projectId, null); closeColorPicker(); });
     div.appendChild(none);
 
-    COLOR_PALETTE.forEach(color => {
+    COLOR_PALETTE.forEach(bg => {
       const sw = document.createElement('div');
-      sw.className = 'color-swatch' + (p.color === color ? ' current' : '');
-      sw.style.background = color;
-      sw.title = color;
-      sw.addEventListener('click', e => { e.stopPropagation(); setProjectColor(projectId, color); closeColorPicker(); });
+      sw.className = 'color-swatch' + (p.color === bg ? ' current' : '');
+      sw.style.background = bg;
+      sw.style.border = `2px solid ${p.color === bg ? CHIP_COLORS[bg] : 'transparent'}`;
+      sw.title = bg;
+      sw.addEventListener('click', e => { e.stopPropagation(); setProjectColor(projectId, bg); closeColorPicker(); });
       div.appendChild(sw);
     });
 
@@ -1106,7 +1120,7 @@
     for (const p of state.projects) {
       const open   = totalOpen(p);
       const active = state.activeProjectId === p.id;
-      const dotStyle = p.color ? `--dot-color:${p.color};background:${p.color}` : '';
+      const cc = chipColors(p);
       html += `<div class="sidebar-item${active ? ' active' : ''}"
         draggable="true"
         ondragstart="onDragStart(event,'${p.id}')"
@@ -1115,7 +1129,7 @@
         ondrop="onDrop(event,'${p.id}')"
         ondragend="onDragEnd(event)"
         onclick="setActive('${p.id}')">
-        <span class="proj-color-dot${p.color ? ' has-color' : ''}" style="${dotStyle}"
+        <span class="proj-color-dot" style="background:${cc.bg}"
           onclick="event.stopPropagation();openColorPicker('${p.id}',this)"
           title="Set project color"></span>
         <span class="name" title="${esc(p.name)}">${esc(p.name)}</span>
@@ -1340,7 +1354,7 @@
         <div class="item-top">
           <span class="item-title-text" data-edit="title" data-pid="${item.projectId}" data-iid="${item.id}">${esc(item.title)}</span>
           <div class="item-meta">
-            ${showProject && p ? `<span class="chip chip-project">${p.color ? `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${p.color};margin-right:4px;vertical-align:middle;flex-shrink:0"></span>` : ''}${esc(p.name)}</span>` : ''}
+            ${showProject && p ? `<span class="chip chip-project" style="background:${chipColors(p).bg};color:${chipColors(p).text}">${esc(p.name)}</span>` : ''}
             ${item.owner ? `<span class="chip chip-owner" data-edit="owner" data-pid="${item.projectId}" data-iid="${item.id}" title="Click to edit owner">${esc(item.owner)}</span>` : `<span style="font-size:11px;color:var(--text-muted);cursor:pointer" data-edit="owner" data-pid="${item.projectId}" data-iid="${item.id}">+ owner</span>`}
             <button class="badge badge-${item.status}" title="Click to cycle status"
               onclick="openCycleStatus('${item.projectId}','${item.id}','${item.status}')">${statusLabel}</button>
